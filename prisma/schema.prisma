@@ -13,3 +13,206 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+//NOTE FROM Camilo Arenas: Prisma does N😳T support model inheritance directly (no "extends").
+// The usual pattern is to repeat the common fields (id, uuid, createdAt, updatedAt) 😳😳 
+// model BaseModel {
+//   id        Int      @id @default(autoincrement())
+//   uuid      String   @unique @default(uuid()) @db.Uuid
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+// }
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  PENDING_EMAIL_VERIFICATION
+}
+
+enum AuditAction {
+  REGISTER
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  REFRESH_SUCCESS
+  REFRESH_REUSE_DETECTED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  EMAIL_VERIFICATION_SENT
+  EMAIL_VERIFIED
+  ROLE_ASSIGNED
+  PERMISSION_GRANTED
+  ACCOUNT_DISABLED
+}
+
+enum VerificationTokenType {
+  email_verify
+  password_reset
+  phone_verify
+}
+
+enum IdentityProvider {
+  password
+  clerk
+  google
+  github
+}
+
+model Identity {
+  // Base fields in all tables
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid()) @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  provider    IdentityProvider
+  providerId  String?   
+  passwordHash String?  // for password provider
+
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, userId]) // in postgres, unique constraints treat nulls as different values
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+model User {
+  // Base fields in all tables
+  id              Int      @id @default(autoincrement())
+  uuid            String   @unique @default(uuid()) @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  email           String     @unique
+  fullName        String?
+  status          UserStatus @default(PENDING_EMAIL_VERIFICATION)
+  emailVerifiedAt DateTime?
+  sessions        Session[]
+  roles           UserRole[]
+  auditEvents     AuditEvent[]
+  identities      Identity[]
+  verificationTokens VerificationToken[]
+}
+
+model Session {
+  // Base fields in all tables
+  id                Int      @id @default(autoincrement())
+  uuid              String   @unique @default(uuid()) @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  userId            Int
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  familyId          String   
+  refreshVersion    Int      @default(0)
+  refreshTokenHash  String   
+  revokedAt         DateTime?
+  revokeReason      String?
+
+  ipAddress         String?
+  userAgent         String?
+
+  refreshExpiresAt DateTime
+  lastUsedAt       DateTime?
+  rotatedAt        DateTime?
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model Role {
+  // Base fields in all tables
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid()) @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  name        String     @unique
+  description String?
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model Permission {
+  // Base fields in all tables
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid()) @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  key         String   @unique  //someting like  "user:read", "admin:all"
+  description String?
+  roles       RolePermission[]
+}
+
+model UserRole {
+  // Base fields in all tables
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    Int
+  roleId    Int
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  // Base fields in all tables
+  id            Int      @id @default(autoincrement())
+  uuid          String   @unique @default(uuid()) @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  roleId        Int
+  permissionId  Int
+  role         Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model VerificationToken {
+  // Base fields in all tables, with no updatedAt since Verification tokens typically become “used” once, no need updatedAt for that.
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       VerificationTokenType
+  tokenHash  String
+  expiresAt  DateTime
+  usedAt     DateTime?
+
+  @@index([userId, type])
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+model AuditEvent {
+  // Base fields in all tables, with no updatedAt since Audit logs should not be updated
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  
+  userId    Int?
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    AuditAction
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([action, createdAt])
+}
