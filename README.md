@@ -37,6 +37,8 @@ npm run start:dev
 API will be available at:
 
 - http://localhost:3000
+- Swagger UI: http://localhost:3000/docs
+- Health check: http://localhost:3000/health
 
 ## Environment
 
