@@ -12,7 +12,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  # optional redis (if you choose redis rate limiting)
   redis:
     image: redis:7
     ports:
